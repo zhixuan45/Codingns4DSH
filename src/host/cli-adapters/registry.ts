@@ -11,6 +11,7 @@ import type {
   CodingNsCliTeamDiagnostic,
 } from '../../shared/contracts/cli-adapter.js'
 import { CodingNsRpcError } from '../rpc-table.js'
+import { unrefTimer } from '../../shared/unref-timer.js'
 import type {
   CodingNsCliDriver,
   CodingNsCliSessionProbeInput,
@@ -282,6 +283,11 @@ export class CodingNsCliAdapterRegistry {
     }
   }
 
+  /** Team child starts only after its external route is durable for cold resume. */
+  async flushSessionBindings(): Promise<void> {
+    await this.sessionStore?.flush()
+  }
+
   /** 设置服务变更后重新载入最近选择。 */
   syncPreferences(value: Readonly<Record<string, CodingNsCliAdapterPreference>> | undefined): void {
     if (value === undefined) return
@@ -347,6 +353,15 @@ export class CodingNsCliAdapterRegistry {
   /** 只有驱动自己维护 Provider turn 边界时，Host 才能把它映射到 DSH step。 */
   supportsSegmentedTurns(adapterId: CodingNsCliAdapterId): boolean {
     return this.drivers.get(adapterId)?.supportsSegmentedTurns === true
+  }
+
+  /**
+   * 临时子代理回合：不走会话存储、不建 DSH 原生会话，直接驱动已启用的适配器。
+   * 供 agent_subagent 工具派发外部 Agent 子任务使用。
+   */
+  async *runSubagentTurn(input: CodingNsCliTurnInput & { adapterId: CodingNsCliAdapterId }): AsyncIterable<CodingNsAgentEvent> {
+    const driver = this.requireEnabledDriver(input.adapterId)
+    yield* driver.executeTurn(input)
   }
 
   async *execute(input: CodingNsCliTurnInput & { readonly adapterId: CodingNsCliAdapterId }): AsyncIterable<CodingNsAgentEvent> {
@@ -776,10 +791,10 @@ export class CodingNsCliAdapterRegistry {
     const controller = new AbortController()
     let timer: ReturnType<typeof setTimeout> | undefined
     const timeout = new Promise<CodingNsCliSessionProbeResult>((resolve) => {
-      timer = setTimeout(() => {
+      timer = unrefTimer(setTimeout(() => {
         controller.abort()
         resolve({ state: 'unreachable', reason: `Provider 会话探测超过 ${this.providerProbeTimeoutMs}ms` })
-      }, this.providerProbeTimeoutMs)
+      }, this.providerProbeTimeoutMs))
     })
     try {
       return await Promise.race([
@@ -894,9 +909,4 @@ function asRecord(value: unknown): Record<string, any> | null {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined
-}
-
-function unrefTimer(timer: ReturnType<typeof setTimeout>): void {
-  const nodeTimer = timer as ReturnType<typeof setTimeout> & { unref?: () => void }
-  nodeTimer.unref?.()
 }

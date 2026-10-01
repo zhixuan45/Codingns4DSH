@@ -48,6 +48,9 @@ export const cliAdaptersFeature: CodingNsClientFeatureModule = {
     const { registerCliConversationSlots } = await import('../cli-slots.js')
     const disposeSlots = registerCliConversationSlots(slots, context.services.rpc, context.services.locale)
     context.resources.add(disposeSlots)
+    // 子代理对话已完全复用 DSH 原生呈现：优先走原生 Subagent 运行时（origin=
+    // subagent 的子会话，原生子智能体视图），其次 Agent Teams 成员卡片；两者
+    // 都不可用的精简 Host 上，由 host 侧 conversations 服务兜底（无自制 UI）。
   },
   settingsPanel: CliAdaptersPanel,
 }

@@ -24,6 +24,10 @@ import { injectDshWebPwaMetadata, injectDshWebTransportOwnership } from './index
 import { applyViewportFitTap } from './modules/pwa/pwa-viewport.js'
 import type { DshHostSettingsProvider, DshHostSettingsScope } from '../dsh-capabilities/host/config-forms-adapter.js'
 import { DshNativeTeamProxy, type AgentRegistry, type NativeTeamService } from './cli-adapters/native-team-proxy.js'
+import { createAgentSubagentTool } from './cli-adapters/subagent-tool.js'
+import { registerNativeTeamSubagentProviders } from './cli-adapters/native-team-subagent.js'
+import { setNativeSubagents } from './cli-adapters/registry-holder.js'
+import type { NativeSubagentService } from './cli-adapters/native-team-subagent.js'
 
 export function apply(ctx?: Context): void {
   if (ctx === undefined) return
@@ -186,6 +190,43 @@ export function apply(ctx?: Context): void {
       console.error('codingns4dsh: host RPC registration failed', error)
       throw error
     }
+
+    // 把外部 Agent 注册表暴露为主 Agent 的 agent_subagent 工具：主会话可以把
+    // 自成体系的子任务派发给 Claude Code、Codex 等外部 Agent 并拿回结果。
+    // 'tools' 由 DSH 运行时（ToolRuntime）提供；注入在服务就绪后完成登记。
+    let agentToolRegistered = false
+    hostCtx.inject(['tools'], (toolsCtx) => {
+      agentToolRegistered = true
+      const tools = (toolsCtx as { tools?: { register(definition: Record<string, unknown>): () => void } }).tools
+      if (tools === undefined) {
+        console.warn('codingns4dsh: tools 服务缺少 register 方法，agent_subagent 工具未注册')
+        return
+      }
+      try {
+        const disposeTool = tools.register(createAgentSubagentTool({ nativeTeam: services.nativeTeam, nativeSessions: services.nativeSessions }))
+        debugInfo('codingns4dsh: agent_subagent 工具已注册')
+        return disposeTool
+      } catch (error) {
+        console.error('codingns4dsh: agent_subagent 工具注册失败', error)
+        return
+      }
+    })
+    // Agent Teams 的成员由 DSH Subagent runtime 创建和持久化。提供方只负责
+    // 在子 Agent 首轮执行前绑定外部 CLI 路由，团队面板与对话页仍使用原生 UI。
+    hostCtx.inject(['subagents'], (subagentCtx) => {
+      const subagents = (subagentCtx as unknown as { subagents?: { registerProvider: (...args: any[]) => unknown } }).subagents
+      if (subagents === undefined || typeof subagents.registerProvider !== 'function') return
+      registerNativeTeamSubagentProviders(subagents as Parameters<typeof registerNativeTeamSubagentProviders>[0])
+      // 供 agent_subagent 工具的纯原生子会话路径使用（不经 Agent Teams）。
+      setNativeSubagents(subagents as NativeSubagentService)
+      debugInfo('codingns4dsh: 外部 Agent Teams 子代理提供方已注册')
+    })
+    const agentToolTimer = setTimeout(() => {
+      if (!agentToolRegistered) {
+        console.warn('codingns4dsh: tools 服务 30 秒未就绪，agent_subagent 工具未注册（当前宿主可能不提供工具运行时）')
+      }
+    }, 30_000)
+    agentToolTimer.unref?.()
 
     hostCtx.effect(() => {
       const sync = (): void => {

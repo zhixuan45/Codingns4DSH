@@ -157,6 +157,10 @@ export interface CodingNsNativeSessionBridge {
   appendUsageSample?(sessionId: string, usage: CodingNsNativeUsageSample): boolean
   /** 将 Provider 压缩生命周期写入 DSH 原生 compaction 事件；不可用时安静降级。 */
   appendCompactionEvent?(sessionId: string, event: CodingNsNativeCompactionEvent): boolean
+  /** 把外部 Agent 的助手正文作为原生 assistant/message 写入指定会话（子代理投影用）。 */
+  appendExternalAssistantText?(sessionId: string, text: string, meta: { readonly adapterId: string; readonly modelId?: string }): boolean
+  /** 把派发给外部 Agent 的 prompt 作为原生 user/message 写入（子代理投影用）。 */
+  appendExternalUserText?(sessionId: string, text: string): boolean
   /** 判断指定会话是否真的具备下一步注入能力。 */
   canInjectNextStep?(sessionId: string): boolean
   /** 在当前 Agent turn 的下一个合法 step 注入插件上下文，不唤醒空闲 Agent。 */
@@ -210,6 +214,47 @@ export function createCodingNsNativeSessionBridge(ctx: Context, dshVersion?: str
     if (format === 3) return false
     return modernProducerSource
   }
+  // 子代理投影：把外部 Agent 的助手正文写成原生 assistant/message（无工具声明，
+  // 纯文本），复用原生对话界面渲染。需要活动 step；没有时返回 false 安静降级。
+  const appendNativeAssistantText = (sessionId: string, text: string, meta: { adapterId: string; modelId?: string }): boolean => {
+    if (text.trim() === '') return false
+    const session = appendableSession(store?.get(sessionId))
+    if (sessionFormat(session) === 'unsupported') return false
+    const position = session === null ? null : activeStep(session)
+    if (session === null || position === null) return false
+    session.append('assistant/message', {
+      turn: position.turn,
+      step: position.step,
+      message: {
+        id: `external-text-${sessionId}-${position.turn}-${position.step}-${Date.now().toString(36)}`,
+        role: 'assistant',
+        content: [{ type: 'text', text }],
+        source: {
+          kind: 'model',
+          plugin: 'codingns4dsh',
+          provider: meta.adapterId,
+          model: meta.modelId?.trim() || meta.adapterId,
+        },
+      },
+      stream: [],
+    }, { surfaceOp: 'append' })
+    return true
+  }
+  // 子代理投影：把派发的 prompt 写成原生 user/message（source=plugin），让原生
+  // 对话界面呈现任务下发一侧。
+  const appendNativeUserText = (sessionId: string, text: string): boolean => {
+    if (text.trim() === '') return false
+    const session = appendableSession(store?.get(sessionId))
+    if (session === null || sessionFormat(session) === 'unsupported') return false
+    session.append('user/message', {
+      id: `external-user-${sessionId}-${Date.now().toString(36)}`,
+      role: 'user',
+      content: [{ type: 'text', text }],
+      source: { kind: 'plugin', plugin: 'codingns4dsh' },
+    }, { surfaceOp: 'append' })
+    return true
+  }
+
   const appendNativeToolCall = (sessionId: string, call: CodingNsNativeToolCall): CodingNsNativeToolCallHandle | null => {
     if (on !== undefined && pendingStepTransitions.has(sessionId)) return null
     const session = appendableSession(store?.get(sessionId))
@@ -527,6 +572,12 @@ export function createCodingNsNativeSessionBridge(ctx: Context, dshVersion?: str
       const session = store?.get(sessionId)
       if (session === undefined || store?.flush === undefined) return
       await store.flush(session)
+    },
+    appendExternalUserText(sessionId, text) {
+      return appendNativeUserText(sessionId, text)
+    },
+    appendExternalAssistantText(sessionId, text, meta) {
+      return appendNativeAssistantText(sessionId, text, meta)
     },
     appendToolCall(sessionId, call) {
       return appendNativeToolCall(sessionId, call)

@@ -10,6 +10,8 @@ import { GrokBuildDriver } from './grok-driver.js'
 import { OpenCodeDriver } from './opencode-driver.js'
 import { AntigravityDriver } from './antigravity-driver.js'
 import { CodingNsCliAdapterRegistry } from './registry.js'
+import { setAdapterRegistry, setSubagentConversations } from './registry-holder.js'
+import { CodingNsSubagentConversations } from './subagent-conversations.js'
 import { CodingNsCliSessionStore } from './session-store.js'
 import { CodingNsDshMessageProjector } from './dsh-message-projector.js'
 import { CommandCodeSubscriptionService } from './command-code-subscription.js'
@@ -59,6 +61,12 @@ export function createCliAdaptersFeature(options: { registry?: CodingNsCliAdapte
       })
       registry.applyEnabledSettings(context.services.settings?.get().agentAdapters)
       registry.warmCatalog()
+      const subagentConversations = new CodingNsSubagentConversations(registry)
+      setSubagentConversations(subagentConversations)
+      context.resources.add(() => { setSubagentConversations(undefined); return subagentConversations.dispose() })
+      // 供 agent_subagent 工具跨模块消费；模块停用时同步置空。
+      setAdapterRegistry(registry)
+      context.resources.add(() => setAdapterRegistry(undefined))
       if (nativeSessions !== undefined) {
         const disposeNativeEvents = nativeSessions.subscribe({
           onEvent: (session, event) => {
@@ -96,6 +104,10 @@ export function createCliAdaptersFeature(options: { registry?: CodingNsCliAdapte
           case 'session/steer': return registry.steer(readSessionId(payload), readPrompt(payload), false)
           case 'session/follow-up': return registry.steer(readSessionId(payload), readPrompt(payload), true)
           case 'session/interrupt': return registry.interrupt(readSessionId(payload))
+          case 'subagents/list': return subagentConversations.list(readOptionalParentSessionId(payload))
+          case 'subagents/get': return subagentConversations.get(readSubagentId(payload))
+          case 'subagents/follow-up': return subagentConversations.followUp(readSubagentId(payload), readPrompt(payload))
+          case 'subagents/interrupt': return subagentConversations.interrupt(readSubagentId(payload))
           case 'team/status': return context.services.nativeTeam?.diagnostic() ?? registry.teamDiagnostic()
           case 'team/members': return requireTeam(context).invoke('members', payload)
           case 'team/tasks': return requireTeam(context).invoke('tasks', payload)
@@ -317,6 +329,17 @@ function readSessionId(value: unknown): string {
   const record = asRecord(value)
   if (typeof record?.sessionId !== 'string' || record.sessionId.trim() === '') throw new Error('sessionId 不能为空')
   return record.sessionId.trim()
+}
+
+function readSubagentId(value: unknown): string {
+  const record = asRecord(value)
+  if (typeof record?.childSessionId !== 'string' || record.childSessionId.trim() === '') throw new Error('childSessionId 不能为空')
+  return record.childSessionId.trim()
+}
+
+function readOptionalParentSessionId(value: unknown): string | undefined {
+  const record = asRecord(value)
+  return typeof record?.parentSessionId === 'string' && record.parentSessionId.trim() !== '' ? record.parentSessionId.trim() : undefined
 }
 
 function readSessionConfig(value: unknown): CodingNsCliSessionConfig {

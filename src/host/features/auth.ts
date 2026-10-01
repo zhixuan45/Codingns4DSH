@@ -1,4 +1,5 @@
 import type { FeatureModule } from '../../shared/contracts/feature.js'
+import { unrefTimer } from '../../shared/unref-timer.js'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import type { HostBindRequest, LoginByEmailRequest } from '../../shared/contracts/auth.js'
@@ -201,7 +202,7 @@ export function createAuthFeature(): FeatureModule<CodingNsHostServices> {
         })().finally(() => { keepAlivePromise = null })
         await keepAlivePromise
       }
-      keepAliveTimer = setInterval(() => { void keepAlive() }, 30_000)
+      keepAliveTimer = unrefTimer(setInterval(() => { void keepAlive() }, 30_000))
       context.resources.add(() => {
         if (keepAliveTimer !== undefined) clearInterval(keepAliveTimer)
         keepAliveTimer = undefined

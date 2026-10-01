@@ -38,7 +38,7 @@ export class DshNativeTeamProxy implements CodingNsNativeTeamProxy {
     const supported = this.service !== undefined
       && typeof this.service.listMembers === 'function'
       && typeof this.service.spawnTeammate === 'function'
-      && this.findAnyAgent() !== undefined
+      && typeof this.agents?.get === 'function'
     return supported
       ? {
           supported: true,
@@ -62,18 +62,18 @@ export class DshNativeTeamProxy implements CodingNsNativeTeamProxy {
       case 'status':
         return {
           ...this.diagnostic(),
-          membership: call(service.membership, agent),
-          members: call(service.listMembers, agent),
+          membership: call(service.membership, service, agent),
+          members: call(service.listMembers, service, agent),
         }
-      case 'members': return requiredCall(service.listMembers, agent)
-      case 'tasks': return requiredCall(service.listTasks, agent)
-      case 'task': return requiredCall(service.getTask, agent, readRequired(input, 'taskId'))
-      case 'spawn': return requiredCall(service.spawnTeammate, agent, withSignal(input, signal))
-      case 'message': return requiredCall(service.sendMessage, agent, withSignal(input, signal))
-      case 'task/create': return requiredCall(service.createTask, agent, input)
-      case 'task/update': return requiredCall(service.updateTask, agent, input)
-      case 'wait': return requiredCall(service.waitForChange, agent, readNumber(input, 'timeoutMs', 30_000), signal)
-      case 'interrupt': return requiredCall(service.interrupt, agent, readRequired(input, 'targetName'))
+      case 'members': return requiredCall(service.listMembers, service, agent)
+      case 'tasks': return requiredCall(service.listTasks, service, agent)
+      case 'task': return requiredCall(service.getTask, service, agent, readRequired(input, 'taskId'))
+      case 'spawn': return requiredCall(service.spawnTeammate, service, agent, withSignal(input, signal))
+      case 'message': return requiredCall(service.sendMessage, service, agent, withSignal(input, signal))
+      case 'task/create': return requiredCall(service.createTask, service, agent, input)
+      case 'task/update': return requiredCall(service.updateTask, service, agent, input)
+      case 'wait': return requiredCall(service.waitForChange, service, agent, readNumber(input, 'timeoutMs', 30_000), signal)
+      case 'interrupt': return requiredCall(service.interrupt, service, agent, readRequired(input, "targetName"))
       default: throw new Error(`DSH_TEAM_RPC_NOT_FOUND: team/${action}`)
     }
   }
@@ -91,18 +91,17 @@ export class DshNativeTeamProxy implements CodingNsNativeTeamProxy {
     return undefined
   }
 
-  private findAnyAgent(): unknown {
-    return this.agents?.list?.()[0]
-  }
 }
 
-function call(fn: ((...args: any[]) => unknown) | undefined, ...args: unknown[]): unknown {
-  return typeof fn === 'function' ? fn(...args) : undefined
+function call(fn: ((...args: any[]) => unknown) | undefined, owner: NativeTeamService | undefined, ...args: unknown[]): unknown {
+  // 官方 TeamService 的方法依赖 this（spawnTeammate 第一行 this.roster.spawn），
+  // 解绑调用会得到 "Cannot read properties of undefined (reading 'roster')"。
+  return typeof fn === 'function' ? fn.apply(owner, args) : undefined
 }
 
-function requiredCall(fn: ((...args: any[]) => unknown) | undefined, ...args: unknown[]): unknown {
+function requiredCall(fn: ((...args: any[]) => unknown) | undefined, owner: NativeTeamService | undefined, ...args: unknown[]): unknown {
   if (typeof fn !== 'function') throw new Error('DSH_TEAM_OPERATION_UNAVAILABLE')
-  return fn(...args)
+  return fn.apply(owner, args)
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

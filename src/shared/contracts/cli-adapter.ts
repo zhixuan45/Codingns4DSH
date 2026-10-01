@@ -128,6 +128,46 @@ export interface CodingNsCliSessionRecord extends CodingNsCliSessionConfig {
   readonly lastError?: string
 }
 
+/** 外部子代理对话属于发起它的 DSH 会话，消息由外部进程真实事件构成。 */
+export interface CodingNsSubagentToolRecord {
+  readonly id: string
+  readonly name: string
+  readonly status: 'started' | 'running' | 'completed' | 'failed'
+  readonly input?: string
+  readonly output?: string
+  readonly error?: string
+}
+
+export interface CodingNsSubagentTurn {
+  readonly id: string
+  readonly prompt: string
+  readonly text: string
+  readonly reasoning: string
+  readonly tools: readonly CodingNsSubagentToolRecord[]
+  readonly startedAt: string
+  readonly endedAt?: string
+  readonly usageSummary?: string
+}
+
+export interface CodingNsSubagentConversation {
+  readonly id: string
+  readonly parentSessionId?: string
+  readonly adapterId: string
+  readonly modelId?: string
+  readonly cwd?: string
+  readonly providerSessionId?: string
+  readonly status: 'running' | 'idle' | 'error' | 'cancelled'
+  readonly error?: string
+  readonly createdAt: string
+  readonly updatedAt: string
+  readonly turns: readonly CodingNsSubagentTurn[]
+}
+
+export type CodingNsSubagentSummary = Omit<CodingNsSubagentConversation, 'turns'> & {
+  readonly title: string
+  readonly turnCount: number
+}
+
 /** DSH 会话当前生效的文件沙箱模式，与 DSH `SandboxMode` 取值一致。 */
 export type CodingNsCliSandboxMode = 'read-only' | 'workspace-write' | 'danger-full-access'
 
