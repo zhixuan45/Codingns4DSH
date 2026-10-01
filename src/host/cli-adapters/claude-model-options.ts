@@ -43,7 +43,13 @@ export async function discoverClaudeModelCatalog(options: ClaudeModelDiscoveryOp
   const discovered = settled.filter((result): result is PromiseFulfilledResult<readonly CodingNsCliModel[]> => result.status === 'fulfilled').flatMap((result) => result.value)
   const configured = configuredModels(runtimeEnv)
   const merged = mergeModels([...CLAUDE_CATALOG.groups[0]!.models, ...discovered, ...configured])
-  return enrichEfforts({ groups: [{ id: 'claude', name: 'Claude', models: merged }], currentModel: null, currentEffort: null }, CLAUDE_CATALOG)
+  return enrichEfforts({
+    groups: [{ id: 'claude', name: 'Claude', models: merged }],
+    currentModel: null,
+    currentEffort: null,
+    scanNotice: '目录合并 CLI、本机配置及内置候选，尚未逐一验证模型可用性。',
+    ...(discovered.length === 0 ? { scanError: 'Claude CLI 与网关未返回模型目录，显示本机配置及内置候选；可手动添加模型。' } : {}),
+  }, CLAUDE_CATALOG)
 }
 
 function readClaudeEnv(configDir: string, workspaceDir: string): Record<string, string> {

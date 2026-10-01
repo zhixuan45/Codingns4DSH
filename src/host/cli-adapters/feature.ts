@@ -80,7 +80,7 @@ export function createCliAdaptersFeature(options: { registry?: CodingNsCliAdapte
       context.resources.add(context.services.rpc.register('cli', (action, payload) => {
         switch (action) {
           case 'catalog': return registry.catalog()
-          case 'models': return registry.models(readAdapterId(payload))
+          case 'models': return registry.models(readAdapterId(payload), readModelRefresh(payload))
           case 'adapter/set': return setAdapterEnabled(context.services.settings, registry, payload)
           case 'session/get': return registry.getSession(readSessionId(payload))
           case 'session/set': return registry.setSession(readSessionId(payload), readSessionConfig(payload))
@@ -117,6 +117,7 @@ export function createCliAdaptersFeature(options: { registry?: CodingNsCliAdapte
         context.resources.add(settings.watch((next) => {
           registry.applyEnabledSettings(next.agentAdapters)
           registry.syncPreferences(next.agentAdapterPreferences)
+          registry.syncDefaults(next.agentAdapterDefaults)
           sessionStore.sync(next.cliSessions)
           subscriptions = buildSubscriptions(next)
         }))
@@ -142,7 +143,7 @@ export function createCliAdaptersFeature(options: { registry?: CodingNsCliAdapte
             inferMessageAdapter(messages),
             registry,
           )
-          const config = storedConfig.adapterId === 'dsh' && selectedExternalAdapter !== undefined
+          let config = storedConfig.adapterId === 'dsh' && selectedExternalAdapter !== undefined
             ? {
                 adapterId: selectedExternalAdapter,
                 ...(dshSelection.modelId === undefined ? {} : { modelId: dshSelection.modelId }),
@@ -152,7 +153,7 @@ export function createCliAdaptersFeature(options: { registry?: CodingNsCliAdapte
           // DSH 首轮请求可能只通过 provider 临时选择外部 Agent，第二轮请求通常不再携带
           // provider。必须在路由决定后立即持久化绑定，否则下一轮会在进入 Registry 前退回 dsh。
           if (sessionId !== '' && storedConfig.adapterId === 'dsh' && selectedExternalAdapter !== undefined) {
-            registry.setSession(sessionId, config)
+            config = registry.setSession(sessionId, config)
           }
           if (config.adapterId === 'dsh') {
             const selection = dshSelection
@@ -256,7 +257,12 @@ async function* guardDshNativeStream(next: () => AsyncIterable<unknown>): AsyncI
     meaningful ||= isMeaningfulDshChunk(chunk)
     yield chunk
   }
-  if (meaningful) {
+  // 保留原始失败和取消原因，避免误报为空响应。
+  const failed = terminal.some((chunk) => {
+    const reason = asRecord(asRecord(chunk)?.reason)
+    return reason?.kind === 'error' || reason?.kind === 'aborted'
+  })
+  if (meaningful || failed) {
     for (const chunk of terminal) yield chunk
     return
   }
@@ -287,6 +293,12 @@ function readAdapterId(value: unknown): string {
   const record = asRecord(value)
   if (typeof record?.adapterId !== 'string' || record.adapterId.trim() === '') throw new Error('adapterId 不能为空')
   return record.adapterId.trim()
+}
+
+function readModelRefresh(value: unknown): { refresh?: boolean } {
+  const refresh = asRecord(value)?.refresh
+  if (refresh !== undefined && typeof refresh !== 'boolean') throw new TypeError('refresh 必须是布尔值')
+  return refresh === undefined ? {} : { refresh }
 }
 
 function readSubscriptionRequest(value: unknown): { adapterId: string; providerId?: string } {

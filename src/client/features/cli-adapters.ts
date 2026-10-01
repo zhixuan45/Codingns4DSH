@@ -2,8 +2,6 @@ import { createElement, useEffect, useState } from 'react'
 import type { CSSProperties, ReactElement } from 'react'
 import type {
   CodingNsCliAdapterDescriptor,
-  CodingNsCliModel,
-  CodingNsCliModelCatalog,
   CodingNsCliSessionRecord,
 } from '../../shared/contracts/cli-adapter.js'
 import type { FeaturePanelProps, CodingNsClientFeatureModule } from './types.js'
@@ -14,6 +12,7 @@ import { backdropPointerDownHandler } from '../popup-dismiss.js'
 import { registerExternalToolStreamUi } from '../external-tool-stream.js'
 import { startContextBreakdownDom } from '../context-breakdown-dom.js'
 import { fetchSessionAdapters, replaceSessionAdapters, sessionAdapterId } from '../session-adapter-cache.js'
+import { CliAdapterDefaultsPanel } from './cli-adapter-defaults-panel.js'
 
 /** 外部 Agent 集成模块。Agent 进程在 Host 运行，浏览器只读取目录和状态。 */
 export const cliAdaptersFeature: CodingNsClientFeatureModule = {
@@ -54,18 +53,16 @@ export const cliAdaptersFeature: CodingNsClientFeatureModule = {
 }
 
 /** 设置页中的 Agent 列表和详情模态框。 */
-export function CliAdaptersPanel({ services, enabled, notify }: FeaturePanelProps): ReactElement {
+export function CliAdaptersPanel({ services, enabled, snapshot, notify }: FeaturePanelProps): ReactElement {
   const t = useCodingNsTranslator(services.locale)
   const [catalog, setCatalog] = useState<readonly CodingNsCliAdapterDescriptor[]>([])
   const [selected, setSelected] = useState<CodingNsCliAdapterDescriptor | null>(null)
-  const [models, setModels] = useState<CodingNsCliModelCatalog | null>(null)
   const [loading, setLoading] = useState(false)
   const [busyAdapterId, setBusyAdapterId] = useState<string | null>(null)
   const [sessions, setSessions] = useState<readonly CodingNsCliSessionRecord[]>([])
   const [sessionsLoading, setSessionsLoading] = useState(false)
   const [restoringSessionId, setRestoringSessionId] = useState<string | null>(null)
   const [archivingSessionId, setArchivingSessionId] = useState<string | null>(null)
-  const [modelsError, setModelsError] = useState('')
   const disabled = !enabled
 
   useEffect(() => {
@@ -92,20 +89,6 @@ export function CliAdaptersPanel({ services, enabled, notify }: FeaturePanelProp
       .finally(() => { if (active) setSessionsLoading(false) })
     return () => { active = false }
   }, [disabled, services.rpc])
-
-  useEffect(() => {
-    if (selected === null || disabled || !selected.installed || !selected.enabled) {
-      setModels(null)
-      return
-    }
-    let active = true
-    setModels(null)
-    setModelsError('')
-    void callCliRpc<CodingNsCliModelCatalog>(services.rpc, 'models', { adapterId: selected.id })
-      .then((value) => { if (active) setModels(value) })
-      .catch((error: unknown) => { if (active) { const message = errorMessage(error); setModelsError(message); notify({ kind: 'error', message }) } })
-    return () => { active = false }
-  }, [disabled, selected, services.rpc])
 
   const rowStyle = dshSettingsListRowStyle
   const buttonStyle = { ...dshSettingsButtonStyle, cursor: disabled ? 'not-allowed' : 'pointer' }
@@ -182,8 +165,9 @@ export function CliAdaptersPanel({ services, enabled, notify }: FeaturePanelProp
     }),
     selected !== null && createElement(AdapterDetailsDialog, {
       adapter: selected,
-      models,
-      loading: selected.installed && selected.enabled && models === null && modelsError === '',
+      services,
+      snapshot,
+      notify,
       onClose: () => setSelected(null),
       buttonStyle,
       t,
@@ -251,14 +235,15 @@ function sessionStatusLabel(record: CodingNsCliSessionRecord, t: ReturnType<type
 
 interface AdapterDetailsDialogProps {
   readonly adapter: CodingNsCliAdapterDescriptor
-  readonly models: CodingNsCliModelCatalog | null
-  readonly loading: boolean
+  readonly services: FeaturePanelProps['services']
+  readonly snapshot: FeaturePanelProps['snapshot']
+  readonly notify: FeaturePanelProps['notify']
   readonly onClose: () => void
   readonly buttonStyle: CSSProperties
   readonly t: ReturnType<typeof useCodingNsTranslator>
 }
 
-function AdapterDetailsDialog({ adapter, models, loading, onClose, buttonStyle, t }: AdapterDetailsDialogProps): ReactElement {
+function AdapterDetailsDialog({ adapter, services, snapshot, notify, onClose, buttonStyle, t }: AdapterDetailsDialogProps): ReactElement {
   return createElement('div', {
     role: 'presentation',
     onPointerDown: backdropPointerDownHandler(onClose),
@@ -282,34 +267,10 @@ function AdapterDetailsDialog({ adapter, models, loading, onClose, buttonStyle, 
         createElement('dt', undefined, t('cli.protocol')), createElement('dd', { style: { margin: 0 } }, adapter.protocol ?? t('cli.undeclared')),
         createElement('dt', undefined, t('cli.capabilities')), createElement('dd', { style: { margin: 0, overflowWrap: 'anywhere' } }, adapter.capabilities?.join('、') ?? t('cli.undeclared')),
       ),
-      createElement('h4', { style: { margin: '16px 0 8px' } }, t('cli.modelCatalog')),
-      !adapter.installed && createElement('div', { style: { opacity: 0.7 } }, t('cli.agentNotInstalled')),
-      adapter.installed && !adapter.enabled && createElement('div', { style: { opacity: 0.7 } }, t('cli.agentDisabled')),
-      adapter.installed && loading && createElement('div', { role: 'status' }, t('cli.readingModels')),
-      adapter.installed && !loading && models !== null && createElement(ModelCatalog, { catalog: models, t }),
+      createElement(CliAdapterDefaultsPanel, { key: adapter.id, adapter, services, snapshot, notify }),
       createElement('div', { style: { display: 'flex', justifyContent: 'flex-end', marginTop: 20 } },
-        createElement('button', { type: 'button', onClick: onClose, style: buttonStyle }, t('cli.done')),
+        createElement('button', { type: 'button', onClick: onClose, style: buttonStyle }, t('cli.closeConfig')),
       ),
     ),
-  )
-}
-
-function ModelCatalog({ catalog, t }: { readonly catalog: CodingNsCliModelCatalog; readonly t: ReturnType<typeof useCodingNsTranslator> }): ReactElement {
-  if (catalog.groups.length === 0) return createElement('div', { style: { opacity: 0.7 } }, t('cli.noModels'))
-  return createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: 14 } },
-    ...catalog.groups.map((group) => createElement('section', { key: group.id },
-      createElement('strong', undefined, group.name),
-      createElement('div', { style: { display: 'flex', flexDirection: 'column', gap: 6, marginTop: 6 } },
-        ...group.models.map((model) => createElement(ModelRow, { key: model.id, model, t })),
-      ),
-    )),
-  )
-}
-
-function ModelRow({ model, t }: { readonly model: CodingNsCliModel; readonly t: ReturnType<typeof useCodingNsTranslator> }): ReactElement {
-  return createElement('div', { style: { padding: '8px 10px', border: `1px solid ${dshThemeColor.border}`, borderRadius: 6 } },
-    createElement('div', { style: { fontWeight: 600 } }, model.name),
-    model.description && createElement('div', { style: { marginTop: 3, opacity: 0.7, fontSize: 13 } }, model.description),
-    createElement('div', { style: { marginTop: 5, opacity: 0.7, fontSize: 13 } }, t('cli.thinkingLevel', { value: model.efforts.length > 0 ? model.efforts.join('、') : t('cli.defaultEffort') })),
   )
 }

@@ -7,6 +7,7 @@ import { debugInfo, debugWarn } from '../shared/debug.js'
 import { CodingNsRpcError, type CodingNsRpcHandler, type CodingNsRpcTable } from './rpc-table.js'
 import type { DshHostSettingsProvider } from '../dsh-capabilities/host/config-forms-adapter.js'
 import type { CodingNsSettingsOperation } from '../dsh-capabilities/settings-store.js'
+import { isExternalAdapterId, parseAdapterDefaults } from './cli-adapters/adapter-defaults.js'
 
 /** 0.2 Connection handler 的 Peer 参数；旧版 handler 仍可通过可选参数调用。 */
 /** CodingNS 自有的 Connection RPC 结果契约，避免绑定 DSH 具体导出名称。 */
@@ -298,6 +299,13 @@ function parseSettingsOp(value: unknown): CodingNsSettingsOperation {
   if (!isAllowedSettingsPath(path)) throw new CodingNsRpcError('CODINGNS_SETTINGS_FIELD_FORBIDDEN', `禁止修改设置字段: ${path.join('.')}`)
   if (value.op === 'unset') return { op: 'unset', path }
   if (!('value' in value)) throw new TypeError('set 操作缺少 value')
+  if (path[0] === 'agentAdapterDefaults') {
+    if (path.length === 2) return { op: 'set', path, value: parseAdapterDefaults(value.value) }
+    const field = path[2]!
+    const defaults = parseAdapterDefaults({ [field]: value.value })
+    const normalized = defaults[field as keyof typeof defaults]
+    return normalized === undefined ? { op: 'unset', path } : { op: 'set', path, value: normalized }
+  }
   return { op: 'set', path, value: value.value }
 }
 
@@ -312,6 +320,10 @@ function operationsToPatch(operations: readonly CodingNsSettingsOperation[]): Re
 }
 
 function isAllowedSettingsPath(path: readonly string[]): boolean {
+  if (path[0] === 'agentAdapterDefaults') {
+    return isExternalAdapterId(path[1] ?? '') && (path.length === 2
+      || path.length === 3 && ['modelId', 'effortId', 'customModelIds'].includes(path[2] ?? ''))
+  }
   if (path.length === 1) return ['controlBaseUrl', 'controlBaseUrls', 'terminalEnhancement', 'workspaceSessionEnhancement', 'fileManagement', 'mobileAccess', 'subscriptionUsage'].includes(path[0] ?? '')
   if (path[0] === 'modules') return path.length === 2 && ['lanAccess', 'reverseProxy', 'cliAdapters', 'terminalEnhancement', 'workspaceSessionEnhancement', 'debug', 'gitManagement', 'fileManagement', 'mobileAccess', 'peerHost'].includes(path[1] ?? '')
   if (path[0] === 'workspaceSessionEnhancement') {

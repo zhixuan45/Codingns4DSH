@@ -8,6 +8,11 @@ export interface CodingNsCliAdapterPreference {
   readonly effortId?: string | undefined
 }
 
+/** 用户设置的稳定默认值，不随会话选择变化。 */
+export interface CodingNsCliAdapterDefaults extends CodingNsCliAdapterPreference {
+  readonly customModelIds?: readonly string[]
+}
+
 /** Codingns4DSH 在 DSH 设置文档中持久化的用户选项。 */
 export interface CodingNsSettings {
   /** Control API 地址不是秘密，可以由 Web 设置页保存到 Host 设置。 */
@@ -38,6 +43,8 @@ export interface CodingNsSettings {
   cliSessions?: CodingNsCliSessionRecord[]
   /** 适配器级最近选择；新建会话时作为默认模型和思考强度。 */
   agentAdapterPreferences?: Record<string, CodingNsCliAdapterPreference>
+  /** 外部 Agent 的稳定默认模型、思考强度及自定义模型目录。 */
+  agentAdapterDefaults?: Record<string, CodingNsCliAdapterDefaults>
 }
 
 /** 用量查询设置：超时控制单次网络查询，间隔控制自动刷新。 */
@@ -388,6 +395,7 @@ export const DEFAULT_CODINGNS_SETTINGS: CodingNsSettings = {
   modules: {},
   agentAdapters: {},
   agentAdapterPreferences: {},
+  agentAdapterDefaults: {},
   terminalEnhancement: DEFAULT_TERMINAL_ENHANCEMENT_SETTINGS,
   workspaceSessionEnhancement: DEFAULT_WORKSPACE_SESSION_ENHANCEMENT_SETTINGS,
   fileManagement: DEFAULT_FILE_MANAGEMENT_SETTINGS,

@@ -1,6 +1,12 @@
 /** Codingns4DSH 当前可接入的外部 Agent 标识。内部字段沿用 cli 命名以保持协议兼容。 */
 export type CodingNsCliAdapterId = string
 
+/** 设置页可以配置的已接入外部适配器。 */
+export const CODINGNS_EXTERNAL_ADAPTER_IDS = [
+  'command-code', 'claude-code', 'kimi', 'gemini', 'pi', 'codex', 'opencode', 'grok',
+] as const
+export const CODINGNS_CUSTOM_MODEL_GROUP_ID = 'codingns-custom'
+
 /** Host 侧可供 Client 展示的外部 Agent 摘要。 */
 export interface CodingNsCliAdapterDescriptor {
   readonly id: CodingNsCliAdapterId
@@ -49,6 +55,10 @@ export interface CodingNsCliModelCatalog {
   readonly groups: readonly CodingNsCliModelGroup[]
   readonly currentModel: string | null
   readonly currentEffort: string | null
+  /** 扫描失败时，自定义模型仍可选择。 */
+  readonly scanError?: string
+  /** 候选目录的来源限制，不代表模型不可用。 */
+  readonly scanNotice?: string
 }
 
 /** DSH 0.2 Agent Team 能力诊断；明确区分“未接入”与“可用”。 */

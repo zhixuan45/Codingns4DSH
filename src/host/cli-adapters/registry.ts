@@ -19,8 +19,9 @@ import type {
 import { CodingNsCliSessionStore } from './session-store.js'
 import { readLegacyImportedAdapterPreferences } from './legacy-session-settings.js'
 import { knownCodexContextWindow } from './model-catalog.js'
+import { hasMissingPreferences, mergeAdapterModels, mergePreferenceRecords, parseAdapterDefaults, preferenceSnapshot, resolveAdapterSelection } from './adapter-defaults.js'
 import type { CodingNsNativeSessionBridge } from '../native-session-bridge.js'
-import type { CodingNsSettings, CodingNsCliAdapterPreference } from '../../shared/contracts/config.js'
+import type { CodingNsSettings, CodingNsCliAdapterPreference, CodingNsCliAdapterDefaults } from '../../shared/contracts/config.js'
 import type { DshHostSettingsScope } from '../../dsh-capabilities/host/config-forms-adapter.js'
 
 type CodingNsCliDetection = Pick<CodingNsCliAdapterDescriptor, 'installed' | 'version' | 'command'>
@@ -110,6 +111,7 @@ export class CodingNsCliAdapterRegistry {
     const legacyPreferences = options.settings === undefined ? {} : readLegacyImportedAdapterPreferences()
     const mergedPreferences = mergePreferenceRecords(legacyPreferences, configuredPreferences)
     this.syncPreferences(mergedPreferences)
+    this.syncDefaults(options.settings?.get().agentAdapterDefaults)
     // DSH 0.1.7 不会把旧 `codingns` 设置段自动映射到 scoped Config entry。
     // 先用旧值恢复当前进程，再把缺失值写入新配置，后续重启即可走正常路径。
     if (options.settings !== undefined && hasMissingPreferences(configuredPreferences, legacyPreferences)) {
@@ -142,6 +144,7 @@ export class CodingNsCliAdapterRegistry {
   private readonly nativeSessions: CodingNsNativeSessionBridge | undefined
   private readonly settings: DshHostSettingsScope<CodingNsSettings> | undefined
   private readonly preferences = new Map<CodingNsCliAdapterId, { modelId?: string; effortId?: string }>()
+  private readonly defaults = new Map<CodingNsCliAdapterId, CodingNsCliAdapterDefaults>()
 
   /** Host 启动后预热安装状态；定时器让同步 CLI 探测不阻塞功能模块装配。 */
   warmCatalog(): void {
@@ -155,9 +158,23 @@ export class CodingNsCliAdapterRegistry {
     }))
   }
 
-  async models(adapterId: CodingNsCliAdapterId): Promise<CodingNsCliModelCatalog> {
+  async models(adapterId: CodingNsCliAdapterId, options: { readonly refresh?: boolean } = {}): Promise<CodingNsCliModelCatalog> {
+    try {
+      return mergeAdapterModels(adapterId, await this.scannedModels(adapterId, options.refresh === true), this.defaults.get(adapterId))
+    } catch (error) {
+      if (!this.defaults.get(adapterId)?.customModelIds?.length) throw error
+      this.requireEnabledDriver(adapterId)
+      return mergeAdapterModels(adapterId, { groups: [], currentModel: null, currentEffort: null }, this.defaults.get(adapterId), error)
+    }
+  }
+
+  private async scannedModels(adapterId: CodingNsCliAdapterId, force: boolean): Promise<CodingNsCliModelCatalog> {
     const driver = this.requireEnabledDriver(adapterId)
     this.requestedModelCatalogs.add(adapterId)
+    if (force) {
+      this.invalidateModelCache(adapterId)
+      return this.refreshModels(driver)
+    }
     const cached = this.modelCache.get(adapterId)
     if (cached !== undefined) {
       if (cached.expiresAt <= Date.now()) void this.refreshModels(driver).catch(() => undefined)
@@ -214,25 +231,13 @@ export class CodingNsCliAdapterRegistry {
     const previous = this.sessions.get(sessionId)
     const sameAdapter = previous?.adapterId === config.adapterId
     const remembered = this.preferences.get(config.adapterId) ?? this.findRememberedPreference(config.adapterId)
+    const defaults = this.defaults.get(config.adapterId)
     const providerSessionId = config.providerSessionId?.trim()
     const providerIdentityChanged = providerSessionId !== undefined
       && providerSessionId !== previous?.providerSessionId
     const normalized = {
       adapterId: config.adapterId,
-      ...(config.modelId?.trim()
-        ? { modelId: config.modelId.trim() }
-        : sameAdapter && previous?.modelId
-          ? { modelId: previous.modelId }
-          : remembered?.modelId
-            ? { modelId: remembered.modelId }
-            : {}),
-      ...(config.effortId?.trim()
-        ? { effortId: config.effortId.trim() }
-        : sameAdapter && previous?.effortId
-          ? { effortId: previous.effortId }
-          : remembered?.effortId
-            ? { effortId: remembered.effortId }
-            : {}),
+      ...resolveAdapterSelection(config, previous, defaults, remembered),
       ...(config.providerId?.trim()
         ? { providerId: config.providerId.trim() }
         : sameAdapter && previous?.providerId
@@ -269,7 +274,15 @@ export class CodingNsCliAdapterRegistry {
     return normalized
   }
 
-  /** 设置服务变更后重新载入适配器级默认选择。 */
+  /** 稳定默认只影响新选择，清空不会恢复旧缓存。 */
+  syncDefaults(value: Readonly<Record<string, CodingNsCliAdapterDefaults>> | undefined): void {
+    this.defaults.clear()
+    for (const [id, defaults] of Object.entries(value ?? {})) {
+      try { this.defaults.set(id, parseAdapterDefaults(defaults)) } catch { /* 非法部署项不影响其他适配器。 */ }
+    }
+  }
+
+  /** 设置服务变更后重新载入最近选择。 */
   syncPreferences(value: Readonly<Record<string, CodingNsCliAdapterPreference>> | undefined): void {
     if (value === undefined) return
     // 0.1.7 ConfigForms 在 entry 重新描述的瞬间可能只返回默认空字典；
@@ -305,7 +318,7 @@ export class CodingNsCliAdapterRegistry {
   private rememberPreference(adapterId: CodingNsCliAdapterId, config: CodingNsCliSessionConfig): void {
     const previous = this.preferences.get(adapterId)
     const modelId = config.modelId?.trim() || previous?.modelId
-    const effortId = config.effortId?.trim() || previous?.effortId
+    const effortId = config.effortId?.trim() || (previous?.modelId === modelId ? previous?.effortId : undefined)
     if (modelId === undefined && effortId === undefined) return
     if (previous?.modelId === modelId && previous?.effortId === effortId) return
     const preference = {
@@ -346,8 +359,10 @@ export class CodingNsCliAdapterRegistry {
     }
     this.executingSessions.add(input.sessionId)
     const previous = this.sessions.get(input.sessionId)
+    input = { ...input, ...resolveAdapterSelection(input, previous, this.defaults.get(input.adapterId), this.preferences.get(input.adapterId) ?? this.findRememberedPreference(input.adapterId)) }
+    const { modelId: _previousModel, effortId: _previousEffort, ...base } = previous?.adapterId === input.adapterId ? previous : { adapterId: input.adapterId }
     let current = {
-      ...(previous ?? { adapterId: input.adapterId }),
+      ...base,
       ...(input.modelId?.trim() ? { modelId: input.modelId.trim() } : {}),
       ...(input.effortId?.trim() ? { effortId: input.effortId.trim() } : {}),
     }
@@ -845,56 +860,6 @@ function detectionFingerprint(detection: CodingNsCliDetection): string {
 
 function catalogHasModels(catalog: CodingNsCliModelCatalog): boolean {
   return catalog.groups.some((group) => group.models.length > 0)
-}
-
-function mergePreferenceRecords(
-  legacy: Readonly<Record<string, CodingNsCliAdapterPreference>>,
-  configured: Readonly<Record<string, CodingNsCliAdapterPreference>> | undefined,
-): Readonly<Record<string, CodingNsCliAdapterPreference>> {
-  const merged: Record<string, CodingNsCliAdapterPreference> = {}
-  for (const [adapterId, preference] of Object.entries(legacy)) {
-    const normalized = normalizePreference(preference)
-    if (normalized !== undefined) merged[adapterId] = normalized
-  }
-  for (const [adapterId, preference] of Object.entries(configured ?? {})) {
-    const normalized = normalizePreference(preference)
-    if (normalized === undefined) continue
-    merged[adapterId] = { ...merged[adapterId], ...normalized }
-  }
-  return merged
-}
-
-function normalizePreference(value: CodingNsCliAdapterPreference | undefined): CodingNsCliAdapterPreference | undefined {
-  if (value === undefined) return undefined
-  const modelId = value.modelId?.trim()
-  const effortId = value.effortId?.trim()
-  if (modelId === undefined && effortId === undefined) return undefined
-  return {
-    ...(modelId ? { modelId } : {}),
-    ...(effortId ? { effortId } : {}),
-  }
-}
-
-function hasMissingPreferences(
-  configured: Readonly<Record<string, CodingNsCliAdapterPreference>> | undefined,
-  legacy: Readonly<Record<string, CodingNsCliAdapterPreference>>,
-): boolean {
-  for (const [adapterId, legacyPreference] of Object.entries(legacy)) {
-    const current = configured?.[adapterId]
-    if (legacyPreference.modelId !== undefined && !hasText(current?.modelId)) return true
-    if (legacyPreference.effortId !== undefined && !hasText(current?.effortId)) return true
-  }
-  return false
-}
-
-function hasText(value: string | undefined): boolean {
-  return value?.trim() !== '' && value !== undefined
-}
-
-function preferenceSnapshot(
-  preferences: ReadonlyMap<string, CodingNsCliAdapterPreference>,
-): Record<string, CodingNsCliAdapterPreference> {
-  return Object.fromEntries([...preferences.entries()].map(([adapterId, preference]) => [adapterId, { ...preference }]))
 }
 
 /** 从 DSH 原生会话快照补齐当前模型提供商，供订阅分流使用。 */

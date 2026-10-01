@@ -30,6 +30,11 @@ export const CodingNsSettingsSchema = z.object({
     modelId: z.union([z.string(), z.const(undefined)]),
     effortId: z.union([z.string(), z.const(undefined)]),
   })).default({}),
+  agentAdapterDefaults: z.dict(z.object({
+    modelId: z.union([z.string(), z.const(undefined)]),
+    effortId: z.union([z.string(), z.const(undefined)]),
+    customModelIds: z.union([z.array(z.string()), z.const(undefined)]),
+  })).default({}),
   // 会话索引是 Host 摘要数据，不能让它进入浏览器状态或模型上下文。
   cliSessions: z.array(z.any()).default(DEFAULT_CODINGNS_SETTINGS.cliSessions ?? []),
   lanAccessDsh: z.object({
