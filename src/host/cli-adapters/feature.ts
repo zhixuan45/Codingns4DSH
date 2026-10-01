@@ -8,6 +8,7 @@ import { PiAgentDriver } from './pi-driver.js'
 import { CodexAppServerDriver } from './codex-driver.js'
 import { GrokBuildDriver } from './grok-driver.js'
 import { OpenCodeDriver } from './opencode-driver.js'
+import { AntigravityDriver } from './antigravity-driver.js'
 import { CodingNsCliAdapterRegistry } from './registry.js'
 import { CodingNsCliSessionStore } from './session-store.js'
 import { CodingNsDshMessageProjector } from './dsh-message-projector.js'
@@ -50,6 +51,7 @@ export function createCliAdaptersFeature(options: { registry?: CodingNsCliAdapte
         new CodexAppServerDriver(),
         new OpenCodeDriver(),
         new GrokBuildDriver(),
+        new AntigravityDriver(),
       ], context.services.settings?.get().agentAdapters, {
         sessionStore,
         ...(context.services.settings === undefined ? {} : { settings: context.services.settings }),

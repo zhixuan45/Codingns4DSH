@@ -1,14 +1,16 @@
 import { CODINGNS_CUSTOM_MODEL_GROUP_ID, CODINGNS_EXTERNAL_ADAPTER_IDS, type CodingNsCliModelCatalog, type CodingNsCliSessionConfig } from '../../shared/contracts/cli-adapter.js'
-import { CLAUDE_CATALOG, CODEX_CATALOG, GEMINI_CATALOG, GROK_CATALOG, KIMI_CATALOG, PI_CATALOG } from './model-catalog.js'
+import { CLAUDE_CATALOG, ANTIGRAVITY_CATALOG, CODEX_CATALOG, GEMINI_CATALOG, GROK_CATALOG, KIMI_CATALOG, PI_CATALOG } from './model-catalog.js'
 import type { CodingNsCliAdapterDefaults, CodingNsCliAdapterPreference } from '../../shared/contracts/config.js'
 
 const MAX_ID_LENGTH = 512
 const MAX_CUSTOM_MODELS = 200
-const EFFORT_UNAVAILABLE = new Set(['claude-code', 'kimi', 'grok'])
-const BUILTIN_CATALOGS = new Set([CLAUDE_CATALOG, CODEX_CATALOG, GEMINI_CATALOG, GROK_CATALOG, KIMI_CATALOG, PI_CATALOG])
+// Antigravity 的思考强度写在模型 ID 里（gemini-3.8-flash-high），驱动不接受单独的 --effort。
+const EFFORT_UNAVAILABLE = new Set(['claude-code', 'kimi', 'grok', 'antigravity'])
+const BUILTIN_CATALOGS = new Set([CLAUDE_CATALOG, CODEX_CATALOG, GEMINI_CATALOG, GROK_CATALOG, KIMI_CATALOG, PI_CATALOG, ANTIGRAVITY_CATALOG])
 const DIRECTORY_NOTICES: Readonly<Record<string, string>> = {
   'claude-code': '目录合并 CLI、本机配置及内置候选，尚未逐一验证模型可用性。',
   kimi: '目录来自 CLI 帮助中的模型候选，非完整模型枚举；可手动添加模型。',
+  antigravity: '模型 ID 已包含思考强度（如 gemini-3.8-flash-high）；需要审批的工具在 headless 下会被自动拒绝。',
 }
 
 export function isExternalAdapterId(value: string): boolean {

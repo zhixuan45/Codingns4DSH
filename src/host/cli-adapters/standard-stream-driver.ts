@@ -103,16 +103,36 @@ export abstract class StandardStreamDriver implements CodingNsCliDriver {
   async *executeTurn(input: CodingNsCliTurnInput): AsyncIterable<CodingNsAgentEvent> {
     const command = this.cachedBinary ?? (await this.detect()).command
     if (command === null) throw new Error(`${this.descriptor.name} 未安装`)
+    // 只有覆写 stdinPrompt 的驱动才打开 stdin 管道；其余驱动保持 `ignore`，
+    // 避免子进程在等待输入时不退出。
+    const stdinPrompt = this.stdinPrompt(input)
     const child = this.runSpawn(command, this.buildArgs(input), {
-      cwd: input.cwd ?? process.cwd(), env: this.cachedEnvironment ?? { ...process.env }, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, shell: WINDOWS,
-    })
+      cwd: input.cwd ?? process.cwd(),
+      env: this.cachedEnvironment ?? { ...process.env },
+      stdio: stdinPrompt === undefined ? ['ignore', 'pipe', 'pipe'] : ['pipe', 'pipe', 'pipe'],
+      windowsHide: true,
+      shell: WINDOWS,
+    }) as ChildProcessWithoutNullStreams
     this.processes.add(child)
     let emittedFinish = false
     let emittedBinding = input.providerSessionId !== undefined
-    const onAbort = (): void => { terminateChildProcess(child) }
+    const closeStdin = (): void => {
+      if (stdinPrompt === undefined) return
+      try { child.stdin.end() } catch { /* 子进程已经退出 */ }
+    }
+    const onAbort = (): void => {
+      // 先关闭 stdin 再终止进程：靠 stdin 驱动的 CLI 才能走完自己的收尾路径。
+      closeStdin()
+      terminateChildProcess(child)
+    }
     input.signal?.addEventListener('abort', onAbort, { once: true })
     if (input.signal?.aborted) onAbort()
     child.stderr.on('data', () => undefined)
+    if (stdinPrompt !== undefined) {
+      // 子进程可能在写入前就退出：EPIPE 必须被吞掉，不能变成未捕获异常或挂起。
+      child.stdin.on('error', () => undefined)
+      try { child.stdin.end(`${stdinPrompt}\n`) } catch { /* 子进程已经退出 */ }
+    }
     try {
       const lines = readline.createInterface({ input: child.stdout })
       try {
@@ -121,11 +141,14 @@ export abstract class StandardStreamDriver implements CodingNsCliDriver {
           const parsed = parseJson(line)
           if (parsed === null) continue
           if (!emittedBinding) {
+            // conversation_id 是 Antigravity 的会话标识，与 session_id 同级处理。
             const providerSessionId = typeof parsed.session_id === 'string'
               ? parsed.session_id
               : typeof parsed.sessionId === 'string'
                 ? parsed.sessionId
-                : null
+                : typeof parsed.conversation_id === 'string'
+                  ? parsed.conversation_id
+                  : null
             if (providerSessionId !== null && providerSessionId.trim() !== '') {
               emittedBinding = true
               yield { type: 'session-binding', providerSessionId: providerSessionId.trim() }
@@ -135,6 +158,8 @@ export abstract class StandardStreamDriver implements CodingNsCliDriver {
             if (chunk.type === 'finish') emittedFinish = true
             yield chunk
           }
+          // stdin 事件流按条计轮次：本轮回合已给出终态时不必等子进程继续读 stdin。
+          if (stdinPrompt !== undefined && emittedFinish) break
         }
       } finally { lines.close() }
       if (!emittedFinish) {
@@ -156,6 +181,13 @@ export abstract class StandardStreamDriver implements CodingNsCliDriver {
   }
 
   protected parseVersion(output: string): string | null { return output.match(/\b\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.-]+)?\b/u)?.[0] ?? null }
+  /**
+   * 需要把 prompt 写进 stdin 的 CLI（Antigravity 的 `--input-format stream-json`）覆写此方法。
+   *
+   * 返回 undefined 表示不打开 stdin 管道，行为与扩展前一致；返回字符串时基座会写入
+   * 一行并在本轮结束时关闭 stdin。prompt 不放进命令行参数，避免参数长度限制与转义问题。
+   */
+  protected stdinPrompt(_input: CodingNsCliTurnInput): string | undefined { return undefined }
   protected abstract buildArgs(input: CodingNsCliTurnInput): readonly string[]
   protected parseEvent(value: Record<string, unknown>, input: CodingNsCliTurnInput): readonly CodingNsAgentEvent[] {
     return genericEventChunks(value, input.signal?.aborted ?? false)

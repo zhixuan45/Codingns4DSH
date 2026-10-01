@@ -34,6 +34,7 @@ const KNOWN_ADAPTERS = [
   ['kimi', 'Kimi', '#0ea5e9'],
   ['opencode', 'OpenCode', '#14b8a6'],
   ['pi', 'Pi', '#f59e0b'],
+  ['antigravity', 'Antigravity', '#6366f1'],
   ['dsh', 'DeepSeek Harness', '#2563eb'],
 ]
 

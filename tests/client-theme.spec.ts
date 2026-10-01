@@ -132,7 +132,7 @@ test('Agent 选择器位于模型左侧并显示完整 Provider Logo', async () 
   assert.match(slotSource, /transform: !locked && open \?/u)
   assert.doesNotMatch(slotSource, /⌄/u)
 
-  for (const adapterId of ['dsh', 'command-code', 'claude-code', 'kimi', 'gemini', 'pi', 'codex', 'opencode', 'grok']) {
+  for (const adapterId of ['dsh', 'command-code', 'claude-code', 'kimi', 'gemini', 'pi', 'codex', 'opencode', 'grok', 'antigravity']) {
     assert.match(iconSource, new RegExp(`(?:['"]${adapterId}['"]|\\b${adapterId}):`, 'u'), `${adapterId} 缺少 Logo 映射`)
   }
   assert.match(bundleSource, /data:image\/(?:png|svg\+xml);base64,/u, 'Client 单文件包应内联 Provider Logo')

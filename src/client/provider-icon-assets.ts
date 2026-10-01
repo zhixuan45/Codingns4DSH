@@ -7,6 +7,7 @@ import grokIcon from '../../assets/provider-icons/grok.png'
 import kimiIcon from '../../assets/provider-icons/kimi.png'
 import openCodeIcon from '../../assets/provider-icons/opencode.png'
 import piIcon from '../../assets/provider-icons/pi.svg'
+import antigravityIcon from '../../assets/provider-icons/antigravity.svg'
 import { installProviderIcons } from './provider-icons.js'
 
 /** 资产只在浏览器单文件入口中加载，由 tsdown 转成 data URL。 */
@@ -20,4 +21,5 @@ installProviderIcons({
   codex: codexIcon,
   opencode: openCodeIcon,
   grok: grokIcon,
+  antigravity: antigravityIcon,
 })

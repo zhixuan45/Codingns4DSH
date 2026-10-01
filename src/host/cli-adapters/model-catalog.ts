@@ -96,6 +96,27 @@ export const PI_CATALOG = staticCatalog('pi', 'Pi', [
   { id: 'provider-default', name: '跟随 Pi 默认模型', efforts: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'] },
 ])
 
+/**
+ * Antigravity CLI 的静态回退目录，取自 `agy models`（1.2.1）。
+ * 思考强度包含在模型 ID 中，因此不单独标注 effort。
+ */
+export const ANTIGRAVITY_CATALOG = staticCatalog('antigravity', 'Antigravity', [
+  { id: 'gemini-3.8-flash-high', name: 'Gemini 3.8 Flash (High)', efforts: [] },
+  { id: 'gemini-3.8-flash-medium', name: 'Gemini 3.8 Flash (Medium)', efforts: [] },
+  { id: 'gemini-3.8-flash-low', name: 'Gemini 3.8 Flash (Low)', efforts: [] },
+  { id: 'gemini-3.7-flash-high', name: 'Gemini 3.7 Flash (High)', efforts: [] },
+  { id: 'gemini-3.7-flash-medium', name: 'Gemini 3.7 Flash (Medium)', efforts: [] },
+  { id: 'gemini-3.7-flash-low', name: 'Gemini 3.7 Flash (Low)', efforts: [] },
+  { id: 'gemini-3.6-flash-high', name: 'Gemini 3.6 Flash (High)', efforts: [] },
+  { id: 'gemini-3.6-flash-medium', name: 'Gemini 3.6 Flash (Medium)', efforts: [] },
+  { id: 'gemini-3.6-flash-low', name: 'Gemini 3.6 Flash (Low)', efforts: [] },
+  { id: 'gemini-3.1-pro-high', name: 'Gemini 3.1 Pro (High)', efforts: [] },
+  { id: 'gemini-3.1-pro-low', name: 'Gemini 3.1 Pro (Low)', efforts: [] },
+  { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6 (Thinking)', efforts: [] },
+  { id: 'claude-opus-4-6-thinking', name: 'Claude Opus 4.6 (Thinking)', efforts: [] },
+  { id: 'gpt-oss-120b-medium', name: 'GPT-OSS 120B (Medium)', efforts: [] },
+])
+
 /** 把 CLI 帮助解析到的模型补上已知档位，未知模型保持空数组。 */
 export function enrichEfforts(catalog: CodingNsCliModelCatalog, known: CodingNsCliModelCatalog): CodingNsCliModelCatalog {
   const effortById = new Map(known.groups.flatMap((group) => group.models.map((model) => [model.id.toLowerCase(), model.efforts] as const)))

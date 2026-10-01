@@ -11,7 +11,7 @@
 
 [简体中文](README.md) · **English**
 
-**Current release `@jingyi0605/codingns4dsh@0.2.0-beta.2.cli-settings.1`** · DSH **`0.2.0-rc.2`** (the only formally supported and validated version) · Node **`>= 22.19`** · macOS / Linux / Windows
+**Current release `@jingyi0605/codingns4dsh@0.2.0-beta.2.cli-settings.2`** · DSH **`0.2.0-rc.2`** (the only formally supported and validated version) · Node **`>= 22.19`** · macOS / Linux / Windows
 
 **[GitHub](https://github.com/jingyi0605/Codingns4DSH)** · **[npm](https://www.npmjs.com/package/@jingyi0605/codingns4dsh)** · **QQ group 1092985965**
 
@@ -84,10 +84,13 @@ Detected on the Host by command name; version and models come from the CLI itsel
 | Codex | `codex` | `codex` | JSON-RPC (app-server) | all + approvals, questions, steering |
 | OpenCode | `opencode` | `opencode`, or `OPENCODE_SERVER_URL` (default `http://127.0.0.1:4096`) | HTTP + SSE | all + approvals, questions |
 | Grok Build | `grok` | `grok`, `grok-build` | ACP | models, streaming, tools, thinking, usage, approvals |
+| Antigravity | `antigravity` | `agy` | stream-json (prompt over stdin) | models, streaming, resume, interrupt, tools, usage |
 
 **models** model list · **streaming** live output · **resume** continue after restart · **interrupt** cancel a turn · **tools** tool calls in the conversation · **thinking** reasoning/effort · **usage** token or subscription limits · **approvals / questions** native DSH interactions · **steering** inject a message mid-turn.
 
 Unlisted capabilities are unsupported by that CLI or version. Install and log in to each Agent outside DSH; Codingns4DSH never stores Agent credentials.
+
+Antigravity's `agy` exposes only skip-everything in print mode (`--dangerously-skip-permissions`), so tool approvals cannot become native DSH interactions: it has no approvals or questions capability and tools run without prompting. Actions that would still require confirmation are auto-denied by the CLI, and the plugin reports the denied tool names as an error. Thinking level is part of the model ID (for example `gemini-3.8-flash-high`), so the settings page offers no separate thinking-level option for this Agent.
 
 ---
 
@@ -223,7 +226,7 @@ The “access” line tells you whether you entered DSH Web locally, over the LA
 DSH automatically initializes the `web` profile on first use. You do not need to create a config file or run `--dump-config`:
 
 ```bash
-dsh plugin --profile web add @jingyi0605/codingns4dsh@0.2.0-beta.2.cli-settings.1
+dsh plugin --profile web add @jingyi0605/codingns4dsh@0.2.0-beta.2.cli-settings.2
 dsh web
 ```
 
@@ -233,7 +236,7 @@ If you do not want to modify the built-in `web` profile, create a separate profi
 
 ```bash
 dsh codingns --from-default-profile web --dump-config
-dsh plugin --profile codingns add @jingyi0605/codingns4dsh@0.2.0-beta.2.cli-settings.1
+dsh plugin --profile codingns add @jingyi0605/codingns4dsh@0.2.0-beta.2.cli-settings.2
 dsh codingns
 ```
 
@@ -254,7 +257,7 @@ dsh plugin --profile web remove @jingyi0605/codingns4dsh
 ```bash
 git clone https://github.com/jingyi0605/Codingns4DSH.git && cd Codingns4DSH
 pnpm install && pnpm build
-dsh plugin --profile web add "$PWD"                # or: npm pack, then add ./jingyi0605-codingns4dsh-0.2.0-beta.2.cli-settings.1.tgz
+dsh plugin --profile web add "$PWD"                # or: npm pack, then add ./jingyi0605-codingns4dsh-0.2.0-beta.2.cli-settings.2.tgz
 dsh web
 ```
 

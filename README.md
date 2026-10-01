@@ -11,7 +11,7 @@
 
 **简体中文** · [English](README.en.md)
 
-**当前版本 `@jingyi0605/codingns4dsh@0.2.0-beta.2.cli-settings.1`** · DSH **`0.2.0-rc.2`**（仅正式兼容并验证该版本）· Node **`>= 22.19`** · macOS / Linux / Windows
+**当前版本 `@jingyi0605/codingns4dsh@0.2.0-beta.2.cli-settings.2`** · DSH **`0.2.0-rc.2`**（仅正式兼容并验证该版本）· Node **`>= 22.19`** · macOS / Linux / Windows
 
 **[GitHub](https://github.com/jingyi0605/Codingns4DSH)** · **[npm](https://www.npmjs.com/package/@jingyi0605/codingns4dsh)** · **QQ 群 1092985965**
 
@@ -84,10 +84,13 @@ DSH 原生部分不会被替换：对话、会话列表、侧栏、设置、权�
 | Codex | `codex` | `codex` | JSON-RPC（app-server） | 全部 + 权限确认、提问、插话 |
 | OpenCode | `opencode` | `opencode`，或 `OPENCODE_SERVER_URL`（默认 `http://127.0.0.1:4096`） | HTTP + SSE | 全部 + 权限确认、提问 |
 | Grok Build | `grok` | `grok`、`grok-build` | ACP | 模型、流式、工具、思考、用量、权限确认 |
+| Antigravity | `antigravity` | `agy` | stream-json（prompt 走 stdin） | 模型、流式、恢复、打断、工具、用量 |
 
 **模型** 模型列表 · **流式** 实时输出 · **恢复** 重启后继续 · **打断** 取消当前回合 · **工具** 对话中渲染工具调用 · **思考** 推理/思考强度 · **用量** token 或订阅额度 · **权限确认 / 提问** 变成 DSH 原生交互 · **插话** 回合中追加消息。
 
 未列出的能力表示该 CLI 或其版本不支持；Agent 的安装与登录都在 DSH 之外完成，Codingns4DSH 不保存 Agent 凭据。
+
+Antigravity 的 `agy` 在 print 模式下只提供"跳过全部权限确认"这一个开关（`--dangerously-skip-permissions`），无法把工具审批变成 DSH 交互，因此它没有权限确认与提问能力，工具调用按放行处理；需要用户确认的操作会被 CLI 自动拒绝，插件会把被拒绝的工具名作为错误反馈。它的思考强度写在模型 ID 里（例如 `gemini-3.8-flash-high`），所以设置页不为它提供单独的思考强度选项。
 
 ---
 
@@ -227,7 +230,7 @@ DSH 设置按钮旁的账户入口会显示登录状态、访问路径与延迟�
 DSH 的 `web` Profile 会在首次使用时自动初始化，不需要手动创建配置文件，也不需要执行 `--dump-config`：
 
 ```bash
-dsh plugin --profile web add @jingyi0605/codingns4dsh@0.2.0-beta.2.cli-settings.1
+dsh plugin --profile web add @jingyi0605/codingns4dsh@0.2.0-beta.2.cli-settings.2
 dsh web
 ```
 
@@ -237,7 +240,7 @@ dsh web
 
 ```bash
 dsh codingns --from-default-profile web --dump-config
-dsh plugin --profile codingns add @jingyi0605/codingns4dsh@0.2.0-beta.2.cli-settings.1
+dsh plugin --profile codingns add @jingyi0605/codingns4dsh@0.2.0-beta.2.cli-settings.2
 dsh codingns
 ```
 
@@ -258,7 +261,7 @@ dsh plugin --profile web remove @jingyi0605/codingns4dsh
 ```bash
 git clone https://github.com/jingyi0605/Codingns4DSH.git && cd Codingns4DSH
 pnpm install && pnpm build
-dsh plugin --profile web add "$PWD"                # 或 npm pack 后 add ./jingyi0605-codingns4dsh-0.2.0-beta.2.cli-settings.1.tgz
+dsh plugin --profile web add "$PWD"                # 或 npm pack 后 add ./jingyi0605-codingns4dsh-0.2.0-beta.2.cli-settings.2.tgz
 dsh web
 ```
 

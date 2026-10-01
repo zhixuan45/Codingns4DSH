@@ -3,7 +3,7 @@ export type CodingNsCliAdapterId = string
 
 /** 设置页可以配置的已接入外部适配器。 */
 export const CODINGNS_EXTERNAL_ADAPTER_IDS = [
-  'command-code', 'claude-code', 'kimi', 'gemini', 'pi', 'codex', 'opencode', 'grok',
+  'command-code', 'claude-code', 'kimi', 'gemini', 'pi', 'codex', 'opencode', 'grok', 'antigravity',
 ] as const
 export const CODINGNS_CUSTOM_MODEL_GROUP_ID = 'codingns-custom'
 

@@ -10,6 +10,7 @@ export const KNOWN_CLI_ADAPTER_IDS = new Set<CodingNsCliAdapterId>([
   'pi',
   'opencode',
   'grok',
+  'antigravity',
 ])
 
 export interface LegacySessionAdapterEvidence {
