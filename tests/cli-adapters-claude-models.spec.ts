@@ -165,3 +165,34 @@ test('只解析 --effort 附近的档位列表，缺少该参数时返回 undefi
   assert.deepEqual(parseEffortLevels(CLAUDE_HELP_WITH_EFFORT), ['low', 'medium', 'high', 'xhigh', 'max'])
   assert.equal(parseEffortLevels('Usage: claude [options]\n  --model <model>\n'), undefined)
 })
+
+test('ANTHROPIC_BASE_URL 带 /v1/messages 时仍拼出正确的网关模型地址', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'codingns-claude-gateway-url-'))
+  const configDir = join(root, '.claude')
+  mkdirSync(configDir, { recursive: true })
+  writeFileSync(join(configDir, 'settings.json'), JSON.stringify({ env: {
+    ANTHROPIC_BASE_URL: 'https://faroapi.example/v1/messages',
+    ANTHROPIC_AUTH_TOKEN: 'gateway-token',
+  } }), 'utf8')
+  const urls: string[] = []
+  try {
+    const driver = new ClaudeCodeDriver({
+      binaries: ['fake-claude'],
+      claudeConfigDir: configDir,
+      spawnSync: ((command: string, args: string[]) => args[0] === '--version'
+        ? { status: 0, stdout: 'claude 2.1.0', stderr: '' }
+        : { status: 0, stdout: CLAUDE_HELP_WITH_EFFORT, stderr: '' }) as never,
+      spawn: (() => fakeClaudeProcess('', 1)) as never,
+      fetch: (async (url: string) => {
+        urls.push(String(url))
+        return new Response(JSON.stringify({ data: [{ id: 'claude-opus-5-5', display_name: 'Gateway Opus' }] }), { status: 200 })
+      }) as typeof fetch,
+    })
+    const ids = (await driver.listModels()).groups[0]?.models.map((model) => model.id) ?? []
+    // 不能拼成 …/v1/messages/v1/models
+    assert.deepEqual(urls, ['https://faroapi.example/v1/models'])
+    assert.equal(ids.includes('claude-opus-5-5'), true)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})

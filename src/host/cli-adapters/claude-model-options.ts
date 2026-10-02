@@ -161,10 +161,18 @@ export function parseEffortLevels(help: string): readonly string[] | undefined {
   return levels.length > 0 ? levels : undefined
 }
 
-function resolveModelsUrl(baseUrl: string | undefined): string | null {  if (!baseUrl?.trim()) return null
+/**
+ * 由 ANTHROPIC_BASE_URL 推导 `/v1/models` 地址。
+ *
+ * 第三方网关常把 base URL 写成完整端点（实测 `https://faroapi.com/v1/messages`），
+ * 直接拼接会得到 `…/v1/messages/v1/models` 这个不存在的路径；因此先剥掉 messages
+ * 端点后缀再拼，与 Claude Code 自身 `base + /v1/messages` 的用法保持一致。
+ */
+function resolveModelsUrl(baseUrl: string | undefined): string | null {
+  if (!baseUrl?.trim()) return null
   try {
     const url = new URL(baseUrl.trim())
-    const pathname = url.pathname.replace(/\/+$/u, '')
+    const pathname = url.pathname.replace(/\/+$/u, '').replace(/\/(?:v1\/)?messages$/iu, '')
     if (/\/v1\/models$/iu.test(pathname)) return url.toString()
     url.pathname = /\/v1$/iu.test(pathname) ? `${pathname}/models` : `${pathname}/v1/models`
     return url.toString()
