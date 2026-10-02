@@ -9,7 +9,7 @@ import { terminateChildProcess } from './process-utils.js'
 const DEFAULT_TIMEOUT_MS = 8_000
 const INITIALIZE_REQUEST_ID = 'codingns-model-discovery'
 const DEFAULT_MODEL_ID = 'provider-default'
-const ALIAS_ENV_KEYS = ['ANTHROPIC_DEFAULT_SONNET_MODEL', 'ANTHROPIC_DEFAULT_OPUS_MODEL', 'ANTHROPIC_DEFAULT_HAIKU_MODEL'] as const
+const ALIAS_ENV_KEYS = ['ANTHROPIC_DEFAULT_SONNET_MODEL', 'ANTHROPIC_DEFAULT_OPUS_MODEL', 'ANTHROPIC_DEFAULT_HAIKU_MODEL', 'ANTHROPIC_DEFAULT_FABLE_MODEL'] as const
 
 export interface ClaudeModelDiscoveryOptions {
   readonly command: string
@@ -36,13 +36,24 @@ export async function discoverClaudeModelCatalog(options: ClaudeModelDiscoveryOp
   const configDir = options.configDir ?? options.env?.CLAUDE_CONFIG_DIR ?? process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), '.claude')
   const runtimeEnv = { ...process.env, ...(options.env ?? {}), ...readClaudeEnv(configDir, options.workspaceDir ?? process.cwd()) }
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  // 本机已经显式配置了模型（CC Switch 等工具写入的 ANTHROPIC_MODEL / ANTHROPIC_DEFAULT_*），
+  // 这份名单就是用户要的阵容：不再去问网关要全量目录——多模型网关会一次返回几十个候选，
+  // 把选择器淹掉。需要更多模型时在设置页的「自定义模型目录」里手动添加。
+  const configured = mergeModels(configuredModels(runtimeEnv))
+  if (configured.length > 0) {
+    return enrichEfforts({
+      groups: [{ id: 'claude', name: 'Claude', models: configured }],
+      currentModel: null,
+      currentEffort: null,
+      scanNotice: '目录来自本机 Claude 配置（ANTHROPIC_MODEL / ANTHROPIC_DEFAULT_*）；需要更多模型可在「自定义模型目录」中手动添加。',
+    }, CLAUDE_CATALOG)
+  }
   const tasks: Array<Promise<readonly CodingNsCliModel[]>> = [readInitializeModels(options.command, runtimeEnv, options.spawn ?? spawn, timeoutMs)]
   const gatewayUrl = resolveModelsUrl(runtimeEnv.ANTHROPIC_BASE_URL)
   if (gatewayUrl) tasks.push(readGatewayModels(gatewayUrl, runtimeEnv, options.fetch ?? fetch, timeoutMs))
   const settled = await Promise.allSettled(tasks)
   const discovered = settled.filter((result): result is PromiseFulfilledResult<readonly CodingNsCliModel[]> => result.status === 'fulfilled').flatMap((result) => result.value)
-  const configured = configuredModels(runtimeEnv)
-  const merged = mergeModels([...CLAUDE_CATALOG.groups[0]!.models, ...discovered, ...configured])
+  const merged = mergeModels([...CLAUDE_CATALOG.groups[0]!.models, ...discovered])
   return enrichEfforts({
     groups: [{ id: 'claude', name: 'Claude', models: merged }],
     currentModel: null,

@@ -58,14 +58,13 @@ function fakeClaudeProcess(output: string, code = 0): unknown {
   return child
 }
 
-test('Claude Code 通过 initialize、网关和 settings.json 合并真实模型', async () => {
+test('Claude Code 在本机没有配置模型时合并 initialize、网关与内置候选', async () => {
   const root = mkdtempSync(join(tmpdir(), 'codingns-claude-models-'))
   const configDir = join(root, '.claude')
   mkdirSync(configDir, { recursive: true })
   writeFileSync(join(configDir, 'settings.json'), JSON.stringify({ env: {
     ANTHROPIC_BASE_URL: 'https://gateway.example/v1',
     ANTHROPIC_AUTH_TOKEN: 'secret-token',
-    ANTHROPIC_MODEL: 'deepseek/deepseek-chat',
   } }), 'utf8')
   const initialize = JSON.stringify({ type: 'control_response', response: {
     subtype: 'success', request_id: 'codingns-model-discovery', response: { models: [
@@ -93,7 +92,7 @@ test('Claude Code 通过 initialize、网关和 settings.json 合并真实模型
     })
     const catalog = await driver.listModels()
     const models = catalog.groups[0]?.models ?? []
-    assert.deepEqual(models.map((model) => model.id), ['provider-default', 'sonnet', 'opus', 'haiku', 'claude-opus-4-8', 'gateway-sonnet', 'deepseek/deepseek-chat'])
+    assert.deepEqual(models.map((model) => model.id), ['provider-default', 'sonnet', 'opus', 'haiku', 'claude-opus-4-8', 'gateway-sonnet'])
     assert.equal(models.find((model) => model.id === 'claude-opus-4-8')?.efforts.join(','), 'high')
     assert.doesNotMatch(JSON.stringify(catalog), /secret-token/u)
     assert.equal(calls.length, 1)
@@ -102,11 +101,44 @@ test('Claude Code 通过 initialize、网关和 settings.json 合并真实模型
   }
 })
 
-test('Claude Code 动态发现失败时回退静态别名并保留配置模型', async () => {
+test('本机显式配置模型时只展示这份阵容，不再合并网关全量目录', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'codingns-claude-configured-'))
+  const configDir = join(root, '.claude')
+  mkdirSync(configDir, { recursive: true })
+  writeFileSync(join(configDir, 'settings.json'), JSON.stringify({ env: {
+    ANTHROPIC_BASE_URL: 'https://gateway.example/v1',
+    ANTHROPIC_AUTH_TOKEN: 'secret-token',
+    ANTHROPIC_MODEL: 'claude-opus-5-5',
+    ANTHROPIC_DEFAULT_OPUS_MODEL: 'claude-opus-5-5',
+    ANTHROPIC_DEFAULT_SONNET_MODEL: 'claude-sonnet-5-5',
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: 'claude-haiku-4-5',
+    ANTHROPIC_DEFAULT_FABLE_MODEL: 'claude-fable-5-1',
+  } }), 'utf8')
+  let gatewayCalls = 0
+  try {
+    const driver = new ClaudeCodeDriver({
+      binaries: ['fake-claude'],
+      claudeConfigDir: configDir,
+      spawnSync: ((command: string, args: string[]) => args[0] === '--version'
+        ? { status: 0, stdout: 'claude 2.1.0', stderr: '' }
+        : { status: 0, stdout: CLAUDE_HELP_WITH_EFFORT, stderr: '' }) as never,
+      spawn: (() => fakeClaudeProcess('', 1)) as never,
+      fetch: (async () => { gatewayCalls += 1; return new Response(JSON.stringify({ data: [{ id: 'gateway-only-model' }] }), { status: 200 }) }) as typeof fetch,
+    })
+    const models = (await driver.listModels()).groups[0]?.models ?? []
+    assert.deepEqual(models.map((model) => model.id), ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-4-5', 'claude-fable-5-1'])
+    assert.equal(gatewayCalls, 0, '有本机配置时不应再去拉网关全量目录')
+    assert.doesNotMatch(JSON.stringify(models), /gateway-only-model/u)
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('Claude Code 动态发现失败时回退静态别名', async () => {
   const root = mkdtempSync(join(tmpdir(), 'codingns-claude-models-fallback-'))
   const configDir = join(root, '.claude')
   mkdirSync(configDir, { recursive: true })
-  writeFileSync(join(configDir, 'settings.json'), JSON.stringify({ env: { ANTHROPIC_MODEL: 'deepseek/deepseek-reasoner', ANTHROPIC_BASE_URL: 'https://gateway.example' } }), 'utf8')
+  writeFileSync(join(configDir, 'settings.json'), JSON.stringify({ env: { ANTHROPIC_BASE_URL: 'https://gateway.example' } }), 'utf8')
   try {
     const driver = new ClaudeCodeDriver({
       binaries: ['fake-claude'],
@@ -117,8 +149,9 @@ test('Claude Code 动态发现失败时回退静态别名并保留配置模型',
       spawn: (() => fakeClaudeProcess('', 1)) as never,
       fetch: (async () => { throw new Error('gateway unavailable') }) as typeof fetch,
     })
-    const ids = (await driver.listModels()).groups[0]?.models.map((model) => model.id) ?? []
-    assert.deepEqual(ids, ['provider-default', 'sonnet', 'opus', 'haiku', 'deepseek/deepseek-reasoner'])
+    const catalog = await driver.listModels()
+    assert.deepEqual(catalog.groups[0]?.models.map((model) => model.id), ['provider-default', 'sonnet', 'opus', 'haiku'])
+    assert.match(String(catalog.scanError), /未返回模型目录/u)
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
@@ -137,8 +170,8 @@ test('Claude Code 按 --help 声明下发 --effort，并给没有逐模型档位
   try {
     const models = (await driver.listModels()).groups[0]?.models ?? []
     // 账号里配置的模型可能不在 CLI 已知目录内（实测 claude-opus-5-5），档位只能来自命令行声明。
-    assert.deepEqual(models.find((model) => model.id === 'claude-opus-5-5')?.efforts, ['low', 'medium', 'high', 'xhigh', 'max'])
-    assert.deepEqual(models.find((model) => model.id === 'sonnet')?.efforts, ['low', 'medium', 'high', 'xhigh', 'max'])
+    assert.deepEqual(models.map((model) => model.id), ['claude-opus-5-5'])
+    assert.deepEqual(models[0]?.efforts, ['low', 'medium', 'high', 'xhigh', 'max'])
     assert.deepEqual(buildArgs(driver, { sessionId: 's', messages: [], prompt: 'hi', effortId: 'xhigh' }).slice(-2), ['--effort', 'xhigh'])
     assert.equal(buildArgs(driver, { sessionId: 's', messages: [], prompt: 'hi' }).includes('--effort'), false)
   } finally {
@@ -151,10 +184,18 @@ test('CLI 不认识 --effort 时既不下发参数也不展示档位', async () 
   const { driver, root } = effortDriver({ help: 'Usage: claude [options]\n  --model <model>  Model for the session\n', model: 'claude-opus-5-5' })
   try {
     const models = (await driver.listModels()).groups[0]?.models ?? []
-    assert.deepEqual(models.find((model) => model.id === 'claude-opus-5-5')?.efforts, [])
-    // 静态别名在旧 CLI 上同样不能展示：展示了就一定会被静默忽略。
-    assert.deepEqual(models.find((model) => model.id === 'sonnet')?.efforts, [])
+    assert.deepEqual(models.map((model) => model.id), ['claude-opus-5-5'])
+    assert.deepEqual(models[0]?.efforts, [])
     assert.equal(buildArgs(driver, { sessionId: 's', messages: [], prompt: 'hi', effortId: 'high' }).includes('--effort'), false)
+    // 没有本机配置时，内置别名在旧 CLI 上同样不能展示：展示了就一定会被静默忽略。
+    const bare = effortDriver({ help: 'Usage: claude [options]\n  --model <model>  Model for the session\n' })
+    try {
+      const aliases = (await bare.driver.listModels()).groups[0]?.models ?? []
+      assert.deepEqual(aliases.find((model) => model.id === 'sonnet')?.efforts, [])
+    } finally {
+      bare.driver.dispose()
+      rmSync(bare.root, { recursive: true, force: true })
+    }
   } finally {
     driver.dispose()
     rmSync(root, { recursive: true, force: true })
