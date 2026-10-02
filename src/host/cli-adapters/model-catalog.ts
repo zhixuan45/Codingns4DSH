@@ -45,11 +45,18 @@ export function resolveGeminiEfforts(modelId: string): readonly string[] {
   return GEMINI_EFFORTS_BY_MODEL.get(modelId.trim().toLowerCase()) ?? []
 }
 
+/**
+ * Claude Code `--effort` 的合法档位（实测 2.1.268：帮助文本列为
+ * `low, medium, high, xhigh, max`，非法值只警告并回退默认）。
+ * 档位是会话级的，模型自身没有更细的粒度时才用它兜底。
+ */
+export const CLAUDE_EFFORT_LEVELS = ['low', 'medium', 'high', 'xhigh', 'max'] as const
+
 export const CLAUDE_CATALOG = staticCatalog('claude', 'Claude', [
-  { id: 'provider-default', name: '跟随 Claude 默认模型', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
-  { id: 'sonnet', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
-  { id: 'opus', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
-  { id: 'haiku', efforts: ['low', 'medium', 'high', 'xhigh', 'max'] },
+  { id: 'provider-default', name: '跟随 Claude 默认模型', efforts: CLAUDE_EFFORT_LEVELS },
+  { id: 'sonnet', efforts: CLAUDE_EFFORT_LEVELS },
+  { id: 'opus', efforts: CLAUDE_EFFORT_LEVELS },
+  { id: 'haiku', efforts: CLAUDE_EFFORT_LEVELS },
 ])
 
 export const KIMI_CATALOG = staticCatalog('kimi', 'Kimi', [

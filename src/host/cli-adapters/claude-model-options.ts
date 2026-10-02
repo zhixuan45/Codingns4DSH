@@ -147,8 +147,21 @@ async function readGatewayModels(url: string, env: Record<string, string | undef
   } finally { clearTimeout(timer) }
 }
 
-function resolveModelsUrl(baseUrl: string | undefined): string | null {
-  if (!baseUrl?.trim()) return null
+/**
+ * 从 `claude --help` 解析 `--effort` 支持的档位。
+ *
+ * 这是判断"这个 CLI 版本能不能接受 --effort"的唯一可靠依据：账号里配置的模型可能
+ * 不在 CLI 的已知目录内（实测 claude-opus-5-5），此时逐模型的 supportedEffortLevels
+ * 拿不到，只有帮助文本仍然声明会话级档位。不支持时返回 undefined，调用方不得下发该参数。
+ */
+export function parseEffortLevels(help: string): readonly string[] | undefined {
+  if (!/--effort\b/u.test(help)) return undefined
+  const listed = /--effort[\s\S]{0,200}?\(([^)]+)\)/u.exec(help)?.[1]
+  const levels = listed?.split(',').map((level) => level.trim()).filter((level) => /^[a-z][a-z-]*$/u.test(level)) ?? []
+  return levels.length > 0 ? levels : undefined
+}
+
+function resolveModelsUrl(baseUrl: string | undefined): string | null {  if (!baseUrl?.trim()) return null
   try {
     const url = new URL(baseUrl.trim())
     const pathname = url.pathname.replace(/\/+$/u, '')

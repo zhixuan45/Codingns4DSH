@@ -1,10 +1,10 @@
 import { homedir } from 'node:os'
 import { basename, dirname, join } from 'node:path'
-import type { CodingNsAgentEvent, CodingNsCliTurnInput } from '../../shared/contracts/cli-adapter.js'
+import type { CodingNsAgentEvent, CodingNsCliModelCatalog, CodingNsCliTurnInput } from '../../shared/contracts/cli-adapter.js'
 import type { CodingNsCliSessionProbeInput, CodingNsCliSessionProbeResult } from './driver.js'
 import { StandardStreamDriver, emptyCatalog, type StandardStreamDriverOptions } from './standard-stream-driver.js'
 import { CLAUDE_CATALOG, isProviderDefaultModel } from './model-catalog.js'
-import { discoverClaudeModelCatalog } from './claude-model-options.js'
+import { discoverClaudeModelCatalog, parseEffortLevels } from './claude-model-options.js'
 import { probeStoredSession, readFirstJsonRecord } from './session-probe.js'
 import { firstToolText, isToolRecord, serializeToolValue } from './tool-observation.js'
 import { promptWithAttachmentPaths } from './attachment-utils.js'
@@ -13,6 +13,9 @@ export class ClaudeCodeDriver extends StandardStreamDriver {
   private readonly sessionRoots: readonly string[]
   private readonly claudeConfigDir: string | undefined
   private readonly discoveryFetch: typeof fetch | undefined
+  /** `claude --help` 声明的会话级思考档位；undefined 表示该 CLI 版本不接受 --effort。 */
+  private effortLevels: readonly string[] | undefined
+  private effortProbed = false
 
   constructor(options: StandardStreamDriverOptions = {}) {
     super({ id: 'claude-code', name: 'Claude Code', protocol: 'stream-json', capabilities: ['models', 'stream', 'resume', 'interrupt', 'tool-events', 'reasoning', 'usage'] }, { binaries: ['claude'] }, options)
@@ -20,18 +23,23 @@ export class ClaudeCodeDriver extends StandardStreamDriver {
     this.claudeConfigDir = options.claudeConfigDir
     this.discoveryFetch = options.fetch
   }
-  async listModels() {
+  override async detect(): Promise<{ installed: boolean; version: string | null; command: string | null }> {
+    const result = await super.detect()
+    if (result.command !== null) this.probeEffortLevels(result.command)
+    return result
+  }
+  async listModels(): Promise<CodingNsCliModelCatalog> {
     const detected = await this.detect()
     if (!detected.installed || detected.command === null) return emptyCatalog()
     try {
-      return await discoverClaudeModelCatalog({
+      return this.applyEffortLevels(await discoverClaudeModelCatalog({
         command: detected.command,
         spawn: this.runSpawn,
         ...(this.discoveryFetch ? { fetch: this.discoveryFetch } : {}),
         ...(this.claudeConfigDir ? { configDir: this.claudeConfigDir } : {}),
-      })
+      }))
     } catch {
-      return CLAUDE_CATALOG
+      return this.applyEffortLevels(CLAUDE_CATALOG)
     }
   }
   async probeSession(input: CodingNsCliSessionProbeInput): Promise<CodingNsCliSessionProbeResult> {
@@ -46,7 +54,48 @@ export class ClaudeCodeDriver extends StandardStreamDriver {
     for (const directory of new Set((input.attachments ?? []).map((attachment) => dirname(attachment.path)))) args.push('--add-dir', directory)
     if (input.providerSessionId) args.push('--resume', input.providerSessionId)
     if (input.modelId && !isProviderDefaultModel(input.modelId)) args.push('--model', input.modelId)
+    // 只下发 CLI 自己在 --help 里声明过的档位：旧版本不认识 --effort，传了会直接失败。
+    const effortId = input.effortId?.trim()
+    if (effortId !== undefined && effortId !== '' && this.effortLevels?.includes(effortId) === true) args.push('--effort', effortId)
     return args
+  }
+
+  override dispose(): void {
+    super.dispose()
+    this.effortLevels = undefined
+    this.effortProbed = false
+  }
+
+  /** 探测一次 `claude --help`，结果随驱动缓存；失败时保持"不支持"，不下发参数。 */
+  private probeEffortLevels(command: string): void {
+    if (this.effortProbed) return
+    this.effortProbed = true
+    try {
+      const result = this.runSpawnSync(command, ['--help'], { encoding: 'utf8', timeout: 5_000, windowsHide: true, shell: process.platform === 'win32' })
+      const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`
+      this.effortLevels = parseEffortLevels(output)
+    } catch {
+      this.effortLevels = undefined
+    }
+  }
+
+  /**
+   * 思考档位必须与下发能力一致：CLI 不认识 `--effort` 时清空档位（界面不展示做不到的东西），
+   * 认识时给没有逐模型信息的模型补上命令行声明的会话级档位。
+   */
+  private applyEffortLevels(catalog: CodingNsCliModelCatalog): CodingNsCliModelCatalog {
+    const levels = this.effortLevels
+    const fallback = levels ?? []
+    return {
+      ...catalog,
+      groups: catalog.groups.map((group) => ({
+        ...group,
+        models: group.models.map((model) => ({
+          ...model,
+          efforts: model.efforts.length > 0 && levels !== undefined ? model.efforts : fallback,
+        })),
+      })),
+    }
   }
   protected parseEvent(value: Record<string, unknown>, input: CodingNsCliTurnInput): readonly CodingNsAgentEvent[] {
     const event = value.type === 'stream_event' && typeof value.event === 'object' && value.event !== null ? value.event as Record<string, unknown> : value

@@ -112,10 +112,13 @@ test('扫描失败仍保留手动目录，并对不支持强度下发的 CLI 清
   assert.equal(failed.scanError, 'CLI 不可用')
   assert.deepEqual(failed.groups.find((group) => group.id === CODINGNS_CUSTOM_MODEL_GROUP_ID)?.models.map((model) => model.id), ['manual/model'])
 
-  for (const adapterId of ['claude-code', 'kimi', 'grok']) {
+  // 仍不支持强度下发的适配器保持清空；Claude Code 已能下发 --effort，必须原样展示档位。
+  for (const adapterId of ['kimi', 'grok', 'antigravity']) {
     const stripped = mergeAdapterModels(adapterId, CLAUDE_CATALOG, undefined)
     assert.deepEqual(stripped.groups.flatMap((group) => group.models.map((model) => model.efforts)), stripped.groups.flatMap((group) => group.models.map(() => [])))
   }
+  const claude = mergeAdapterModels('claude-code', CLAUDE_CATALOG, undefined)
+  assert.deepEqual(claude.groups[0]?.models[0]?.efforts, ['low', 'medium', 'high', 'xhigh', 'max'])
   const kept = mergeAdapterModels('gemini', GEMINI_CATALOG, undefined)
   assert.deepEqual(kept.groups[0]?.models[0]?.efforts, ['low', 'medium', 'high'])
 })

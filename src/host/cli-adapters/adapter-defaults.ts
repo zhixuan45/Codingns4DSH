@@ -4,8 +4,9 @@ import type { CodingNsCliAdapterDefaults, CodingNsCliAdapterPreference } from '.
 
 const MAX_ID_LENGTH = 512
 const MAX_CUSTOM_MODELS = 200
-// Antigravity 的思考强度写在模型 ID 里（gemini-3.8-flash-high），驱动不接受单独的 --effort。
-const EFFORT_UNAVAILABLE = new Set(['claude-code', 'kimi', 'grok', 'antigravity'])
+// 这些适配器的目录虽然声明了思考档位，但驱动不下发任何强度参数，因此界面不展示。
+// Claude Code 已实测支持会话级 `--effort`（low/medium/high/xhigh/max），由驱动按下发能力放行。
+const EFFORT_UNAVAILABLE = new Set(['kimi', 'grok', 'antigravity'])
 const BUILTIN_CATALOGS = new Set([CLAUDE_CATALOG, CODEX_CATALOG, GEMINI_CATALOG, GROK_CATALOG, KIMI_CATALOG, PI_CATALOG, ANTIGRAVITY_CATALOG])
 const DIRECTORY_NOTICES: Readonly<Record<string, string>> = {
   'claude-code': '目录合并 CLI、本机配置及内置候选，尚未逐一验证模型可用性。',
